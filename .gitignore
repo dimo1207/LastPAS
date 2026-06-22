@@ -1,0 +1,7 @@
+node_modules
+dist
+out
+.DS_Store
+.eslintcache
+*.log*
+electron-v39.8.10-darwin-arm64.zip
