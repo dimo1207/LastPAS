@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getDb } from './db/index.js'
+import { getDb, getDbVersion } from './db/index.js'
 
 function createWindow() {
   // Create the browser window.
@@ -51,8 +51,37 @@ app.whenReady().then(() => {
   })
 
   // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-  getDb()
+ipcMain.on('ping', () => console.log('pong'))
+
+ipcMain.handle('db:getMeta', () => {
+  const db = getDb()
+
+  const tables = db
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name NOT LIKE 'sqlite_%'
+    `)
+    .get()
+
+  return {
+    ok: true,
+    sqliteVersion: getDbVersion(),
+    tableCount: tables.count
+  }
+})
+
+  const db = getDb()
+
+  ipcMain.handle('db:health', async () => {
+    return db ? 'db-ok' : 'db-missing'
+  })
+
+  ipcMain.handle('db:version', async () => {
+    return getDbVersion()
+  })
+
   createWindow()
 
   app.on('activate', function () {

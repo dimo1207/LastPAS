@@ -1,9 +1,9 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  dbHealth: () => 'ok'
+  getDbMeta: () => ipcRenderer.invoke('db:getMeta')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
