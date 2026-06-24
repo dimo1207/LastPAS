@@ -16,7 +16,6 @@ import {
   deleteResponse
 } from './db/index.js'
 
-
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -32,17 +31,14 @@ function createWindow() {
     }
   })
 
-
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
-
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
-
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -51,22 +47,17 @@ function createWindow() {
   }
 }
 
-
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
-
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-
   ipcMain.on('ping', () => console.log('pong'))
-
 
   ipcMain.handle('db:getMeta', () => {
     const db = getDb()
-
 
     const tables = db
       .prepare(`
@@ -77,7 +68,6 @@ app.whenReady().then(() => {
       `)
       .get()
 
-
     return {
       ok: true,
       sqliteVersion: getDbVersion(),
@@ -85,11 +75,18 @@ app.whenReady().then(() => {
     }
   })
 
-
   ipcMain.handle('session:create', (_event, payload) => {
-    return createSession(payload?.clientLabel ?? null)
-  })
+    const participantLabel = String(payload?.participantLabel ?? '').trim()
 
+    if (!participantLabel) {
+      return {
+        ok: false,
+        error: 'missing-participant-label'
+      }
+    }
+
+    return createSession(participantLabel)
+  })
 
   ipcMain.handle('session:listRecent', (_event, payload) => {
     return listRecentSessions(payload?.limit)
@@ -103,41 +100,45 @@ app.whenReady().then(() => {
     return updateClientLabel(payload?.clientId, payload?.clientLabel)
   })
 
-
   ipcMain.handle('session:updateStatus', (_event, payload) => {
     return updateSessionStatus(payload?.sessionId, payload?.status)
   })
-
 
   ipcMain.handle('response:create', (_event, payload) => {
     return createResponse(payload)
   })
 
-
   ipcMain.handle('response:listForSession', (_event, payload) => {
     return listResponsesForSession(payload?.sessionId)
   })
-
 
   ipcMain.handle('response:update', (_event, payload) => {
     return updateResponse(payload?.responseId, payload?.updates)
   })
 
-
-  // New: delete response handler
   ipcMain.handle('response:delete', (_event, payload) => {
     return deleteResponse(payload?.responseId)
   })
 
+  ipcMain.handle('session:delete', (_event, payload) => {
+    const sessionId = String(payload?.sessionId ?? '').trim()
+
+    if (!sessionId) {
+      return {
+        ok: false,
+        error: 'missing-session-id'
+      }
+    }
+
+  return deleteSession(sessionId)
+})
 
   createWindow()
-
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
-
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

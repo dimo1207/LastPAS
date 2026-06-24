@@ -163,11 +163,19 @@ export function getDbVersion() {
   return row?.version ?? 'unknown'
 }
 
-export function createSession(clientLabel = null) {
+export function createSession(participantLabel) {
   const database = getDb()
-  const timestamp = nowUtc()
+  const normalizedLabel = normalizeRequiredText(participantLabel)
+
+  if (!normalizedLabel) {
+    return {
+      ok: false,
+      error: 'missing-participant-label'
+    }
+  }
 
   const run = database.transaction((label) => {
+    const timestamp = nowUtc()
     const clientId = makeId('cli')
     const sessionId = makeId('sess')
 
@@ -178,7 +186,7 @@ export function createSession(clientLabel = null) {
         created_at,
         updated_at
       ) VALUES (?, ?, ?, ?)
-    `).run(clientId, label ?? null, timestamp, timestamp)
+    `).run(clientId, label, timestamp, timestamp)
 
     database.prepare(`
       INSERT INTO assessment_sessions (
@@ -206,14 +214,21 @@ export function createSession(clientLabel = null) {
 
     return {
       ok: true,
-      clientId,
-      clientLabel: label ?? null,
-      sessionId,
-      status: 'draft'
+      session: {
+        sessionId,
+        clientId,
+        participantLabel: label,
+        clientLabel: label,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        status: 'draft',
+        validityStatus: 'invalid',
+        codingPercentage: '0%'
+      }
     }
   })
 
-  return run(clientLabel)
+  return run(normalizedLabel)
 }
 
 export function listRecentSessions(limit = 10) {
@@ -226,6 +241,7 @@ export function listRecentSessions(limit = 10) {
         s.session_id AS sessionId,
         s.client_id AS clientId,
         c.client_label AS clientLabel,
+        c.client_label AS participantLabel,
         s.created_at AS createdAt,
         s.updated_at AS updatedAt,
         s.status AS status,
@@ -247,13 +263,19 @@ export function listMenuAdministrations(limit = 50) {
     .prepare(`
       SELECT
         s.session_id AS sessionId,
+        s.client_id AS clientId,
         COALESCE(c.client_label, '—') AS participantLabel,
+        c.client_label AS clientLabel,
         s.created_at AS dateAdministered,
+        s.created_at AS createdAt,
+        s.updated_at AS updatedAt,
+        s.status AS status,
+        s.validity_status AS validityStatus,
         CASE
           WHEN COUNT(r.response_id) >= 14 THEN 'Valid'
           ELSE 'Invalid'
         END AS administrationStatus,
-        '0%' AS codingPercentage
+        CAST(s.coding_percentage AS TEXT) || '%' AS codingPercentage
       FROM assessment_sessions s
       JOIN clients c
         ON c.client_id = s.client_id
@@ -261,8 +283,13 @@ export function listMenuAdministrations(limit = 50) {
         ON r.session_id = s.session_id
       GROUP BY
         s.session_id,
+        s.client_id,
         c.client_label,
-        s.created_at
+        s.created_at,
+        s.updated_at,
+        s.status,
+        s.validity_status,
+        s.coding_percentage
       ORDER BY s.created_at DESC
       LIMIT ?
     `)
@@ -579,4 +606,58 @@ export function deleteResponse(responseId) {
     ok: result.changes > 0,
     responseId
   }
+}
+
+export function deleteSession(sessionId) {
+  const database = getDb()
+  const normalizedSessionId = String(sessionId ?? '').trim()
+
+  if (!normalizedSessionId) {
+    return {
+      ok: false,
+      error: 'missing-session-id'
+    }
+  }
+
+  const clientRow = database
+    .prepare(`
+      SELECT client_id AS clientId
+      FROM assessment_sessions
+      WHERE session_id = ?
+    `)
+    .get(normalizedSessionId)
+
+  if (!clientRow?.clientId) {
+    return {
+      ok: false,
+      error: 'session-not-found',
+      sessionId: normalizedSessionId
+    }
+  }
+
+  const result = database.transaction((targetSessionId, clientId) => {
+    const deletedSession = database
+      .prepare(`
+        DELETE FROM assessment_sessions
+        WHERE session_id = ?
+      `)
+      .run(targetSessionId)
+
+    const deletedClient = database
+      .prepare(`
+        DELETE FROM clients
+        WHERE client_id = ?
+      `)
+      .run(clientId)
+
+    return {
+      ok: deletedSession.changes > 0,
+      sessionId: targetSessionId,
+      clientId,
+      deletedSessionRows: deletedSession.changes,
+      deletedClientRows: deletedClient.changes
+    }
+  })(normalizedSessionId, clientRow.clientId)
+
+  return result
 }
