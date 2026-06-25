@@ -62,10 +62,8 @@ body,
 .administration-page__header {
     width: 850px;
     max-width: calc(100vw - 28px);
-    margin: 0 auto 20px;
+    margin: 70px auto 50px;
     text-align: center;
-    margin-top: 70px;
-    margin-bottom: 50px;
 }
 
 .administration-page__title {
@@ -84,14 +82,6 @@ body,
     border-radius: 5px;
     background: #707070;
 }
-
-@media (max-width: 720px) {
-    .administration-page__title {
-        font-size: 42pt;
-    }
-}
-
-/* Carousel shell */
 
 .carousel-section {
     position: relative;
@@ -126,6 +116,7 @@ body,
 
 .carousel__slide__interior {
     position: relative;
+    width: 100%;
     min-height: 640px;
 }
 
@@ -133,23 +124,19 @@ body,
     width: 100%;
     height: 100%;
     min-height: 620px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
     background: transparent;
     border: none;
     border-radius: 7px;
     color: #03dac6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     cursor: pointer;
     transition: background-color 0.1s ease-in, opacity 180ms ease, transform 180ms ease;
-    padding: 0;
 }
 
-.carousel__button--left {
-    justify-self: stretch;
-    background-color: rgba(54, 53, 53, 0);
-}
-
+.carousel__button--left,
 .carousel__button--right {
     justify-self: stretch;
     background-color: rgba(54, 53, 53, 0);
@@ -180,21 +167,6 @@ body,
     height: 50px;
     color: #03dac6;
     flex: 0 0 auto;
-}
-
-@media (max-width: 860px) {
-    .carousel-section {
-        grid-template-columns: 56px minmax(0, 1fr) 56px;
-    }
-
-    .carousel__button {
-        min-height: 540px;
-    }
-
-    .carousel-arrow-icon {
-        width: 34px;
-        height: 34px;
-    }
 }
 
 .carousel__nav {
@@ -247,16 +219,6 @@ body,
     text-shadow: 0 0 0 currentColor, 0.5px 0 0 currentColor;
 }
 
-/* Slide body */
-
-.administration-slide-body {
-    position: relative;
-    width: 100%;
-    max-width: 980px;
-    height: 520px;
-    margin: 0 auto;
-}
-
 .card-title {
     display: flex;
     justify-content: center;
@@ -269,296 +231,6 @@ body,
     text-decoration-thickness: 1px;
 }
 
-.response__container {
-    display: flex;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    border: #707070;
-    border-style: solid;
-    border-radius: 7px;
-    border-width: 2px;
-    width: min(615px, calc(100% - 24px));
-    height: 20%;
-    background: #353434;
-}
-
-.response__cover {
-    display: flex;
-    position: absolute;
-    inset: 0;
-    border: #707070;
-    border-style: solid;
-    border-radius: 7px;
-    border-width: 2px;
-    background: #353434;
-    justify-content: center;
-    align-items: center;
-    overflow: hidden;
-}
-
-.response__cover:hover {
-    background-color: #474545;
-    cursor: pointer;
-}
-
-.response__label {
-    font-family: "Segoe UI";
-    font-size: 20pt;
-    color: #707070;
-    font-weight: bold;
-}
-
-.response__label__inner {
-    font-size: 14pt;
-    color: #707070;
-    font-weight: bold;
-}
-
-.response__input {
-    display: flex;
-    position: absolute;
-    height: 90%;
-    width: 91%;
-    font-size: 18pt;
-    font-family: "Segoe UI";
-    color: #707070;
-    font-weight: bold;
-    background: none;
-    border: none;
-    bottom: 3px;
-    margin-left: 10px;
-    outline: none;
-}
-
-.response-text {
-    overflow-x: hidden;
-}
-
-.response-text::-webkit-scrollbar {
-    background: #707070;
-    width: 8px;
-}
-
-.response-text::-webkit-scrollbar-thumb {
-    background: #222;
-}
-
-.response__input::-webkit-scrollbar {
-    background: #707070;
-    width: 8px;
-}
-
-.response__input::-webkit-scrollbar-thumb {
-    background: #222;
-}
-
-.notes__input::-webkit-scrollbar {
-    background: #707070;
-    width: 8px;
-}
-
-.notes__input::-webkit-scrollbar-thumb {
-    background: #222;
-}
-
-::placeholder {
-    color: #707070;
-}
-
-.r__optimized__container {
-    display: inline;
-    position: relative;
-    height: 100px;
-    width: 5%;
-    transition: transform 250ms ease-out;
-    margin-top: 3%;
-}
-
-.r__optimized__button {
-    display: flex;
-    position: absolute;
-    background: #353434;
-    width: 45px;
-    height: 40px;
-    border-radius: 12px;
-    border-style: none;
-    font-weight: bolder;
-    font-size: 16pt;
-    font-family: "Segoe UI";
-    cursor: pointer;
-    margin-top: 5%;
-    align-items: center;
-    justify-content: center;
-    line-height: 40px;
-}
-
-.r__optimized__button__active {
-    color: #6200ee;
-    border-style: solid;
-    background-color: black;
-    border-color: #353434;
-    line-height: 36px;
-}
-
-.r__optimized__text {
-    display: flex;
-    position: absolute;
-    font-size: 8pt;
-    color: #707070;
-    font-weight: bold;
-    font-family: "Segoe UI";
-    top: 40%;
-    margin-left: 3px;
-    white-space: nowrap;
-    padding-top: 4px;
-}
-
-.r__optimized__text__label {
-    display: flex;
-    position: absolute;
-    color: #707070;
-    font-weight: bold;
-    font-family: "Segoe UI";
-    margin-left: 3px;
-    white-space: nowrap;
-    padding-top: 4px;
-    top: 55%;
-    font-size: 9pt;
-    transform: translateX(-24%);
-}
-
-.button__panel {
-    display: grid;
-    position: absolute;
-    right: 0;
-    padding: 4px;
-    height: 90%;
-}
-
-.button__panel__svg {
-    background: none;
-    border: none;
-    cursor: pointer;
-    fill: black;
-}
-
-.button__panel__svg__active {
-    fill: #03dac6;
-}
-
-.administration__notes {
-    display: flex;
-    position: absolute;
-    height: 97%;
-    width: 224px;
-    border: #707070;
-    border-style: solid;
-    border-radius: 7px;
-    border-width: 2px;
-    font-weight: bolder;
-    font-size: 12pt;
-    font-family: "Segoe UI";
-    padding-left: 15px;
-    color: #707070;
-    background: black;
-    right: 0;
-    transition: transform 250ms ease-out;
-    overflow: hidden;
-}
-
-.notes__submission__buttons {
-    display: flex;
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    padding: 10px;
-}
-
-.orientation__panel {
-    display: inline;
-    position: absolute;
-    height: 77%;
-    width: 235px;
-    border: #707070;
-    color: #707070;
-    border-style: solid;
-    border-radius: 7px;
-    border-width: 2px;
-    font-weight: bolder;
-    font-size: 16pt;
-    background: black;
-    justify-content: center;
-    text-align: center;
-    padding-top: 10px;
-    right: 0;
-    margin-top: 1%;
-    transition: transform 250ms ease-out;
-    overflow: hidden;
-}
-
-.orientation__button__list {
-    display: flex;
-    padding: 10px;
-    justify-content: center;
-}
-
-.orientation__button.current-button {
-    background-color: #03dac6;
-    color: #03dac6;
-}
-
-.orientation__button {
-    display: inline;
-    position: relative;
-    width: 45px;
-    height: 40px;
-    border-radius: 12px;
-    border-style: none;
-    font-weight: bolder;
-    font-size: 16pt;
-    font-family: "Segoe UI";
-    cursor: pointer;
-    padding-bottom: 5px;
-    margin-right: 1%;
-    background-color: #353434;
-}
-
-.orientation__svg {
-    padding-right: 0%;
-}
-
-.notes__input {
-    display: flex;
-    position: absolute;
-    height: 55%;
-    width: 90%;
-    top: 20%;
-    background: none;
-    border: none;
-    font-weight: bolder;
-    font-size: 14pt;
-    font-family: "Segoe UI";
-    color: #707070;
-    outline: none;
-}
-
-.rectangle--1 {
-    top: 10%;
-}
-
-.rectangle--2 {
-    top: 32%;
-}
-
-.rectangle--3 {
-    top: 54%;
-}
-
-.rectangle--4 {
-    top: 76%;
-}
-
 .transition__button__container {
     position: relative;
     height: 54px;
@@ -569,11 +241,11 @@ body,
 }
 
 .transition__button {
-    line-height: 50px;
-    color: #03dac6;
     min-width: 180px;
     height: 54px;
     padding: 0 24px;
+    line-height: 50px;
+    color: #03dac6;
     border: 2px solid #222;
     border-radius: 7px;
     background: black;
@@ -597,51 +269,6 @@ body,
     display: inline-flex;
     align-items: center;
     justify-content: center;
-}
-
-::-webkit-scrollbar {
-    display: none;
-}
-
-@media (max-width: 980px) {
-    .carousel__nav {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 768px) {
-    .administration-page {
-        padding: 18px 14px 24px;
-    }
-
-    .carousel-section {
-        grid-template-columns: 44px minmax(0, 1fr) 44px;
-        gap: 8px;
-    }
-
-    .administration-page__title {
-        font-size: clamp(2rem, 8vw, 2.8rem);
-    }
-
-    .administration-slide-body {
-        height: 470px;
-    }
-
-    .carousel__slide__interior {
-        min-height: 575px;
-    }
-
-    .carousel__nav {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .response__label {
-        font-size: 16pt;
-    }
-
-    .response__label__inner {
-        font-size: 11pt;
-    }
 }
 
 .administration-page__modal-backdrop {
@@ -692,12 +319,12 @@ body,
 .administration-page__modal-button {
     min-width: 130px;
     height: 48px;
+    padding: 0 18px;
     border-radius: 8px;
     font-family: Tahoma, sans-serif;
     font-size: 14pt;
     font-weight: bold;
     cursor: pointer;
-    padding: 0 18px;
 }
 
 .administration-page__modal-button--secondary {
@@ -729,22 +356,6 @@ body,
     cursor: default;
 }
 
-@media (max-width: 720px) {
-    .administration-page__modal-title {
-        font-size: 18pt;
-    }
-
-    .administration-page__modal-text {
-        font-size: 12pt;
-    }
-
-    .administration-page__modal-button {
-        min-width: 110px;
-        height: 44px;
-        font-size: 12pt;
-    }
-}
-
 .administration-page__back,
 .carousel__button,
 .carousel__indicator,
@@ -772,4 +383,39 @@ body,
     outline-offset: 3px;
     box-shadow: 0 0 0 3px rgba(3, 218, 198, 0.18);
     border-color: #03dac6;
+}
+
+@media (max-width: 860px) {
+    .carousel-section {
+        grid-template-columns: 56px minmax(0, 1fr) 56px;
+    }
+
+    .carousel__button {
+        min-height: 540px;
+    }
+
+    .carousel-arrow-icon {
+        width: 34px;
+        height: 34px;
+    }
+}
+
+@media (max-width: 720px) {
+    .administration-page__title {
+        font-size: 42pt;
+    }
+
+    .administration-page__modal-title {
+        font-size: 18pt;
+    }
+
+    .administration-page__modal-text {
+        font-size: 12pt;
+    }
+
+    .administration-page__modal-button {
+        min-width: 110px;
+        height: 44px;
+        font-size: 12pt;
+    }
 }
