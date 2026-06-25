@@ -8,7 +8,7 @@ const api = {
     ipcRenderer.invoke('session:create', payload),
 
   deleteSession: (sessionId) =>
-  ipcRenderer.invoke('session:delete', { sessionId }),
+    ipcRenderer.invoke('session:delete', { sessionId }),
 
   listRecentSessions: (limit) =>
     ipcRenderer.invoke('session:listRecent', { limit }),
@@ -30,6 +30,9 @@ const api = {
 
   updateResponse: (responseId, updates) =>
     ipcRenderer.invoke('response:update', { responseId, updates }),
+
+  upsertResponse: (payload) =>
+    ipcRenderer.invoke('response:upsert', payload),
 
   deleteResponse: (responseId) =>
     ipcRenderer.invoke('response:delete', { responseId })

@@ -585,6 +585,139 @@ export function updateResponse(responseId, input) {
   }
 }
 
+export function upsertResponse(input) {
+  const database = getDb()
+  const timestamp = nowUtc()
+
+  const sessionId = String(input?.sessionId ?? "").trim()
+  const responseNumber = Number(input?.responseNumber)
+  const cardNumber = normalizeRequiredText(input?.cardNumber)
+  const responseText = String(input?.responseText ?? "").trim()
+
+  if (!sessionId) {
+    return {
+      ok: false,
+      error: "missing-session-id"
+    }
+  }
+
+  if (!Number.isInteger(responseNumber) || responseNumber < 1) {
+    return {
+      ok: false,
+      error: "invalid-response-number"
+    }
+  }
+
+  if (!cardNumber) {
+    return {
+      ok: false,
+      error: "missing-card-number"
+    }
+  }
+
+  const existing = database
+    .prepare(`
+      SELECT response_id AS responseId
+      FROM responses
+      WHERE session_id = ?
+        AND response_number = ?
+    `)
+    .get(sessionId, responseNumber)
+
+  if (existing?.responseId) {
+    const result = database
+      .prepare(`
+        UPDATE responses
+        SET
+          card_number = ?,
+          response_text = ?,
+          response_notes = ?,
+          inquiry_text = ?,
+          orientation = ?,
+          touched_card = ?,
+          r_optimized = ?,
+          updated_at = ?
+        WHERE response_id = ?
+      `)
+      .run(
+        cardNumber,
+        responseText,
+        normalizeOptionalText(input?.responseNotes),
+        normalizeOptionalText(input?.inquiryText),
+        normalizeOptionalText(input?.orientation),
+        normalizeNullableBooleanInteger(input?.touchedCard),
+        normalizeOptionalText(
+          input?.rOptimized === true
+            ? "true"
+            : input?.rOptimized === false
+            ? "false"
+            : input?.rOptimized
+        ),
+        timestamp,
+        existing.responseId
+      )
+
+    return {
+      ok: result.changes > 0,
+      mode: "update",
+      responseId: existing.responseId,
+      sessionId,
+      responseNumber,
+      updatedAt: timestamp
+    }
+  }
+
+  const responseId = makeId("resp")
+
+  const result = database
+    .prepare(`
+      INSERT INTO responses (
+        response_id,
+        session_id,
+        created_at,
+        updated_at,
+        response_number,
+        card_number,
+        response_text,
+        response_notes,
+        inquiry_text,
+        orientation,
+        touched_card,
+        r_optimized
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      responseId,
+      sessionId,
+      timestamp,
+      timestamp,
+      responseNumber,
+      cardNumber,
+      responseText,
+      normalizeOptionalText(input?.responseNotes),
+      normalizeOptionalText(input?.inquiryText),
+      normalizeOptionalText(input?.orientation),
+      normalizeNullableBooleanInteger(input?.touchedCard),
+      normalizeOptionalText(
+        input?.rOptimized === true
+          ? "true"
+          : input?.rOptimized === false
+          ? "false"
+          : input?.rOptimized
+      )
+    )
+
+  return {
+    ok: result.changes > 0,
+    mode: "create",
+    responseId,
+    sessionId,
+    responseNumber,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  }
+}
+
 export function deleteResponse(responseId) {
   const database = getDb()
 

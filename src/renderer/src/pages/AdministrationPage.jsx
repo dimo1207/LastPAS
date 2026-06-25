@@ -29,6 +29,25 @@ function getSlideBodyHeight(count) {
     return 520 + (count - 4) * 114;
 }
 
+function createInitialResponseSlots() {
+    let globalCounter = 1;
+
+    return CARD_LABELS.map(() =>
+        Array.from({ length: INITIAL_RESPONSE_COUNT }, (_, index) => {
+            const slot = {
+                responseNumber: index + 1,
+                globalResponseNumber: globalCounter,
+            };
+            globalCounter += 1;
+            return slot;
+        })
+    );
+}
+
+function getInitialNextGlobalResponseNumber() {
+    return CARD_LABELS.length * INITIAL_RESPONSE_COUNT + 1;
+}
+
 export default function AdministrationPage({
     onNavigateMenu,
     onNavigateInquiry,
@@ -37,12 +56,15 @@ export default function AdministrationPage({
 }) {
     const [currentSlide, setCurrentSlide] = useState(0);
     const [showInquiryConfirm, setShowInquiryConfirm] = useState(false);
-    const [responseCounts, setResponseCounts] = useState(() =>
-        CARD_LABELS.map(() => INITIAL_RESPONSE_COUNT)
+    const [responseSlotsByCard, setResponseSlotsByCard] = useState(createInitialResponseSlots);
+    const [nextGlobalResponseNumber, setNextGlobalResponseNumber] = useState(
+        getInitialNextGlobalResponseNumber
     );
     const [scrollTargetByCard, setScrollTargetByCard] = useState({});
+    const [isSaving, setIsSaving] = useState(false);
     const cancelButtonRef = useRef(null);
     const confirmButtonRef = useRef(null);
+    const responseBoxRefs = useRef({});
 
     const slides = useMemo(
         () =>
@@ -59,7 +81,7 @@ export default function AdministrationPage({
         cancelButtonRef.current?.focus();
 
         const handleKeyDown = (event) => {
-            if (event.key === "Escape" && !isSubmitting) {
+            if (event.key === "Escape" && !isSubmitting && !isSaving) {
                 event.preventDefault();
                 setShowInquiryConfirm(false);
                 return;
@@ -87,7 +109,7 @@ export default function AdministrationPage({
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [showInquiryConfirm, isSubmitting]);
+    }, [showInquiryConfirm, isSubmitting, isSaving]);
 
     useEffect(() => {
         if (Object.keys(scrollTargetByCard).length === 0) return;
@@ -99,49 +121,209 @@ export default function AdministrationPage({
         return () => window.clearTimeout(timer);
     }, [scrollTargetByCard]);
 
-    const goToSlide = (index) => {
-        if (index < 0 || index >= slides.length) return;
+    const setResponseBoxRef = (cardIndex, globalResponseNumber, instance) => {
+        if (!responseBoxRefs.current[cardIndex]) {
+            responseBoxRefs.current[cardIndex] = {};
+        }
+
+        if (instance) {
+            responseBoxRefs.current[cardIndex][globalResponseNumber] = instance;
+        } else if (responseBoxRefs.current[cardIndex]) {
+            delete responseBoxRefs.current[cardIndex][globalResponseNumber];
+        }
+    };
+
+    const collectResponsesForCard = (cardIndex) => {
+        const refsForCard = responseBoxRefs.current[cardIndex] || {};
+
+        return Object.keys(refsForCard)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map((globalResponseNumber) => {
+                const instance = refsForCard[globalResponseNumber];
+                return instance?.getResponseData?.();
+            })
+            .filter(Boolean);
+    };
+
+    const saveResponsesForCard = async (cardIndex) => {
+        const sessionId = selectedSession?.sessionId;
+
+        if (!sessionId) {
+            console.log("[saveResponsesForCard] skipped: no sessionId", { cardIndex });
+            return;
+        }
+
+        const responses = collectResponsesForCard(cardIndex).filter(
+            (response) => response.responseText?.trim()
+        );
+
+        if (responses.length === 0) {
+            console.log("[saveResponsesForCard] skipped: no non-empty responses", {
+                cardIndex,
+                cardLabel: slides[cardIndex]?.label,
+            });
+            return;
+        }
+
+        console.log("[saveResponsesForCard] starting", {
+            cardIndex,
+            cardLabel: slides[cardIndex]?.label,
+            responseCount: responses.length,
+            responses,
+        });
+
+        setIsSaving(true);
+
+        try {
+            for (const response of responses) {
+                const payload = {
+                    sessionId,
+                    responseNumber: response.globalResponseNumber,
+                    cardNumber: response.cardCode,
+                    responseText: response.responseText,
+                    responseNotes: response.notesText,
+                    orientation: response.orientation,
+                    touchedCard: response.touchActive,
+                    rOptimized: response.isROptimized,
+                };
+
+                console.log("[upsertResponse] sending", payload);
+
+                const result = await window.api.upsertResponse(payload);
+
+                console.log("[upsertResponse] result", {
+                    responseNumber: payload.responseNumber,
+                    cardNumber: payload.cardNumber,
+                    result,
+                });
+
+                if (!result?.ok) {
+                    throw new Error(result?.error || "response-save-failed");
+                }
+            }
+
+            console.log("[saveResponsesForCard] complete", {
+                cardIndex,
+                cardLabel: slides[cardIndex]?.label,
+            });
+        } catch (error) {
+            console.error("[saveResponsesForCard] failed", {
+                cardIndex,
+                cardLabel: slides[cardIndex]?.label,
+                error,
+            });
+            throw error;
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const goToSlide = async (index) => {
+        if (index < 0 || index >= slides.length || index === currentSlide || isSaving) return;
+
+        console.log("[goToSlide] before save", {
+            fromSlide: currentSlide,
+            toSlide: index,
+            fromCard: slides[currentSlide]?.label,
+            toCard: slides[index]?.label,
+        });
+
+        await saveResponsesForCard(currentSlide);
+
+        console.log("[goToSlide] after save, changing slide", {
+            toSlide: index,
+            toCard: slides[index]?.label,
+        });
+
         setCurrentSlide(index);
     };
 
-    const goPrevious = () => {
-        if (currentSlide === 0) return;
+    const goPrevious = async () => {
+        if (currentSlide === 0 || isSaving) return;
+
+        console.log("[goPrevious] before save", {
+            currentSlide,
+            currentCard: slides[currentSlide]?.label,
+        });
+
+        await saveResponsesForCard(currentSlide);
+
+        console.log("[goPrevious] after save, changing slide", {
+            nextSlide: currentSlide - 1,
+        });
+
         setCurrentSlide((prev) => prev - 1);
     };
 
-    const goNext = () => {
-        if (currentSlide === slides.length - 1) return;
+    const goNext = async () => {
+        if (currentSlide === slides.length - 1 || isSaving) return;
+
+        console.log("[goNext] before save", {
+            currentSlide,
+            currentCard: slides[currentSlide]?.label,
+        });
+
+        await saveResponsesForCard(currentSlide);
+
+        console.log("[goNext] after save, changing slide", {
+            nextSlide: currentSlide + 1,
+        });
+
         setCurrentSlide((prev) => prev + 1);
     };
 
     const handleOpenInquiryConfirm = () => {
-        if (isSubmitting) return;
+        if (isSubmitting || isSaving) return;
         setShowInquiryConfirm(true);
     };
 
     const handleCloseInquiryConfirm = () => {
-        if (isSubmitting) return;
+        if (isSubmitting || isSaving) return;
         setShowInquiryConfirm(false);
     };
 
-    const handleConfirmInquiry = () => {
-        if (isSubmitting) return;
+    const handleConfirmInquiry = async () => {
+        if (isSubmitting || isSaving) return;
+
+        console.log("[handleConfirmInquiry] before save", {
+            currentSlide,
+            currentCard: slides[currentSlide]?.label,
+        });
+
+        await saveResponsesForCard(currentSlide);
+
+        console.log("[handleConfirmInquiry] after save, navigating to inquiry", {
+            currentSlide,
+            currentCard: slides[currentSlide]?.label,
+            selectedSession,
+        });
+
         setShowInquiryConfirm(false);
         onNavigateInquiry?.(selectedSession);
     };
 
     const handleAddResponse = (cardIndex) => {
-        const nextResponseNumber = responseCounts[cardIndex] + 1;
+        const newDisplayResponseNumber = responseSlotsByCard[cardIndex].length + 1;
+        const assignedGlobalResponseNumber = nextGlobalResponseNumber;
 
-        setResponseCounts((prev) => {
+        setResponseSlotsByCard((prev) => {
             const next = [...prev];
-            next[cardIndex] += 1;
+            next[cardIndex] = [
+                ...next[cardIndex],
+                {
+                    responseNumber: newDisplayResponseNumber,
+                    globalResponseNumber: assignedGlobalResponseNumber,
+                },
+            ];
             return next;
         });
 
+        setNextGlobalResponseNumber((prev) => prev + 1);
+
         setScrollTargetByCard((prev) => ({
             ...prev,
-            [cardIndex]: nextResponseNumber,
+            [cardIndex]: assignedGlobalResponseNumber,
         }));
     };
 
@@ -155,6 +337,7 @@ export default function AdministrationPage({
                     className="administration-page__back"
                     onClick={onNavigateMenu}
                     tabIndex={showInquiryConfirm ? -1 : 0}
+                    disabled={isSaving}
                 >
                     <span className="administration-page__back-icon" aria-hidden="true">
                         &#8592;
@@ -173,7 +356,7 @@ export default function AdministrationPage({
                     type="button"
                     className={`carousel__button carousel__button--left ${currentSlide === 0 ? "is-hidden" : ""}`}
                     onClick={goPrevious}
-                    disabled={currentSlide === 0}
+                    disabled={currentSlide === 0 || isSaving}
                     aria-label="Previous Card"
                     tabIndex={showInquiryConfirm || currentSlide === 0 ? -1 : 0}
                 >
@@ -187,8 +370,8 @@ export default function AdministrationPage({
                             style={{ transform: `translateX(-${currentSlide * 100}%)` }}
                         >
                             {slides.map((slide, index) => {
-                                const responseCount = responseCounts[index];
-                                const slideHeight = getSlideBodyHeight(responseCount);
+                                const responseSlots = responseSlotsByCard[index];
+                                const slideHeight = getSlideBodyHeight(responseSlots.length);
 
                                 return (
                                     <li
@@ -208,21 +391,29 @@ export default function AdministrationPage({
                                                     margin: "0 auto",
                                                 }}
                                             >
-                                                {Array.from({ length: responseCount }, (_, responseIdx) => {
-                                                    const responseNumber = responseIdx + 1;
-                                                    const isLast = responseNumber === responseCount;
+                                                {responseSlots.map((slot, responseIdx) => {
+                                                    const isLast = responseIdx === responseSlots.length - 1;
 
                                                     return (
                                                         <ResponseBox
-                                                            key={`${slide.id}-response-${responseNumber}`}
+                                                            key={`${slide.id}-global-${slot.globalResponseNumber}`}
+                                                            ref={(instance) =>
+                                                                setResponseBoxRef(
+                                                                    index,
+                                                                    slot.globalResponseNumber,
+                                                                    instance
+                                                                )
+                                                            }
                                                             cardIndex={index}
-                                                            responseNumber={responseNumber}
+                                                            responseNumber={slot.responseNumber}
+                                                            globalResponseNumber={slot.globalResponseNumber}
                                                             topPercent={getResponseTopPercent(responseIdx)}
-                                                            isInitiallyOpen={responseNumber === 1}
+                                                            isInitiallyOpen={slot.responseNumber === 1}
                                                             showAddButton={isLast}
                                                             onAddResponse={isLast ? () => handleAddResponse(index) : undefined}
                                                             shouldScrollIntoView={
-                                                                scrollTargetByCard[index] === responseNumber
+                                                                scrollTargetByCard[index] ===
+                                                                slot.globalResponseNumber
                                                             }
                                                         />
                                                     );
@@ -236,11 +427,11 @@ export default function AdministrationPage({
                                                         className="transition__button"
                                                         onClick={handleOpenInquiryConfirm}
                                                         aria-label="Begin Inquiry Phase"
-                                                        disabled={isSubmitting}
+                                                        disabled={isSubmitting || isSaving}
                                                         tabIndex={showInquiryConfirm ? -1 : 0}
                                                     >
                                                         <span className="vertically_align_text">
-                                                            {isSubmitting ? "Loading..." : "Inquiry"}
+                                                            {isSubmitting || isSaving ? "Loading..." : "Inquiry"}
                                                         </span>
                                                     </button>
                                                 </div>
@@ -257,7 +448,7 @@ export default function AdministrationPage({
                     type="button"
                     className={`carousel__button carousel__button--right ${atLastSlide ? "is-hidden" : ""}`}
                     onClick={goNext}
-                    disabled={atLastSlide}
+                    disabled={atLastSlide || isSaving}
                     aria-label="Next Card"
                     tabIndex={showInquiryConfirm || atLastSlide ? -1 : 0}
                 >
@@ -275,6 +466,7 @@ export default function AdministrationPage({
                         className={`carousel__indicator ${currentSlide === index ? "current-slide" : ""}`}
                         onClick={() => goToSlide(index)}
                         tabIndex={showInquiryConfirm ? -1 : 0}
+                        disabled={isSaving}
                     >
                         <div className="card__style">{slide.label}</div>
                     </button>
@@ -309,7 +501,7 @@ export default function AdministrationPage({
                                 type="button"
                                 className="administration-page__modal-button administration-page__modal-button--secondary"
                                 onClick={handleCloseInquiryConfirm}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || isSaving}
                             >
                                 Cancel
                             </button>
@@ -319,9 +511,9 @@ export default function AdministrationPage({
                                 type="button"
                                 className="administration-page__modal-button administration-page__modal-button--primary"
                                 onClick={handleConfirmInquiry}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || isSaving}
                             >
-                                {isSubmitting ? "Loading..." : "Confirm"}
+                                {isSubmitting || isSaving ? "Loading..." : "Confirm"}
                             </button>
                         </div>
                     </div>

@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+    forwardRef,
+    useEffect,
+    useImperativeHandle,
+    useRef,
+    useState,
+} from "react";
 import "../styles/ResponseBox.css";
 
 const CARD_CODES = ["CI", "CII", "CIII", "CIV", "CV", "CVI", "CVII", "CVIII", "CIX", "CX"];
@@ -62,13 +68,17 @@ function TouchIcon() {
     );
 }
 
-export default function ResponseBox({
-    cardIndex,
-    responseNumber,
-    topPercent,
-    isInitiallyOpen = false,
-    shouldScrollIntoView = false,
-}) {
+const ResponseBox = forwardRef(function ResponseBox(
+    {
+        cardIndex,
+        responseNumber,
+        globalResponseNumber,
+        topPercent,
+        isInitiallyOpen = false,
+        shouldScrollIntoView = false,
+    },
+    ref
+) {
     const [isOpen, setIsOpen] = useState(isInitiallyOpen);
     const [notesOpen, setNotesOpen] = useState(false);
     const [orientationOpen, setOrientationOpen] = useState(false);
@@ -87,6 +97,37 @@ export default function ResponseBox({
         responseNumber === 1
             ? { shortLabel: "Pr", fullLabel: "Prompt" }
             : { shortLabel: "Pu", fullLabel: "Pull" };
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            getResponseData: () => ({
+                cardIndex,
+                cardCode,
+                responseNumber,
+                globalResponseNumber,
+                responseId,
+                responseText,
+                notesText,
+                orientation,
+                touchActive,
+                isROptimized: showROptimized ? isROptimized : false,
+            }),
+        }),
+        [
+            cardIndex,
+            cardCode,
+            responseNumber,
+            globalResponseNumber,
+            responseId,
+            responseText,
+            notesText,
+            orientation,
+            touchActive,
+            isROptimized,
+            showROptimized,
+        ]
+    );
 
     useEffect(() => {
         if (!shouldScrollIntoView || !wrapperRef.current) return;
@@ -253,4 +294,6 @@ export default function ResponseBox({
             )}
         </div>
     );
-}
+});
+
+export default ResponseBox;

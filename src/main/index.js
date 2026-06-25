@@ -12,8 +12,10 @@ import {
   updateSessionStatus,
   createResponse,
   updateResponse,
+  upsertResponse,
   listResponsesForSession,
-  deleteResponse
+  deleteResponse,
+  deleteSession
 } from './db/index.js'
 
 function createWindow() {
@@ -115,6 +117,10 @@ app.whenReady().then(() => {
   ipcMain.handle('response:update', (_event, payload) => {
     return updateResponse(payload?.responseId, payload?.updates)
   })
+
+  ipcMain.handle('response:upsert', (_event, payload) => {
+  return upsertResponse(payload)
+})
 
   ipcMain.handle('response:delete', (_event, payload) => {
     return deleteResponse(payload?.responseId)
