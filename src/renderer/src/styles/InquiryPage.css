@@ -1,15 +1,46 @@
+.inquiry-page {
+    min-height: 100vh;
+    width: 100%;
+    background: #000;
+    color: #707070;
+    padding: 24px 14px 32px;
+    box-sizing: border-box;
+    font-family: "Segoe UI", Tahoma, sans-serif;
+}
+
+.inquiry-page__header {
+    width: 850px;
+    max-width: calc(100vw - 28px);
+    margin: 70px auto 50px;
+    text-align: center;
+}
+
+.inquiry-page__title {
+    color: #6d6d6d;
+    font-family: "Palatino Linotype", Palatino, serif;
+    font-size: 64pt;
+    font-weight: 700;
+    line-height: 1;
+}
+
 .inquiry-page__rule {
     width: 350px;
     height: 4px;
-    margin: 10px auto 18px;
+    margin: 5px auto 18px;
     border-radius: 5px;
     background: #707070;
+}
+
+.carousel__slide__interior {
+    position: relative;
+    width: 100%;
+    height: 100%;
 }
 
 .inquiry-slide-body {
     position: relative;
     width: 100%;
-    height: 520px;
+    height: 100%;
     margin: 0 auto;
     display: flex;
     align-items: center;
@@ -28,34 +59,25 @@
     color: #707070;
     font-size: 20px;
     text-align: center;
-    padding: 24px;
 }
 
 .carousel__slider-nav {
-    width: 85%;
-    margin: 24px auto 0;
+    width: 100%;
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: center;
+    position: relative;
+    justify-content: center;
 }
 
 .carousel__slider-wrapper {
     position: relative;
-    width: 95%;
-    margin: 0 auto;
+    width: 85%;
     padding-top: 18px;
 }
 
 .carousel__slider {
     width: 100%;
     height: 30px;
-    border: none;
     cursor: pointer;
-    background: transparent;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
 }
 
 .carousel__slider:focus {
@@ -63,7 +85,7 @@
 }
 
 .carousel__slider::-webkit-slider-runnable-track {
-    height: 30px;
+    height: 35px;
     border: none;
     border-radius: 3px;
     background: linear-gradient(to right,
@@ -75,12 +97,12 @@
 
 #custom-handle {
     position: absolute;
-    top: 29%;
+    top: 13px;
     width: 100px;
-    height: 35px;
+    height: 40px;
     transform: translateX(-50%);
     text-align: center;
-    line-height: 30px;
+    line-height: 32px;
     background: black;
     border: #707070 solid 3px;
     border-radius: 8px;

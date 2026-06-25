@@ -40,7 +40,7 @@ export default function InquiryPage({
         slides.length > 1 ? (currentSlide / (slides.length - 1)) * 100 : 0;
 
     return (
-        <div className="administration-page">
+        <div className="inquiry-page">
             <div className="administration-page__topbar">
                 <button
                     type="button"
@@ -54,8 +54,8 @@ export default function InquiryPage({
                 </button>
             </div>
 
-            <header className="administration-page__header">
-                <h1 className="administration-page__title">Inquiry</h1>
+            <header className="inquiry-page__header">
+                <h1 className="inquiry-page__title">Inquiry</h1>
                 <div className="inquiry-page__rule" />
             </header>
 
