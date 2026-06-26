@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import ConfirmationDialog from "../components/ConfirmationDialog";
 import "../styles/AdministrationPage.css";
 import "../styles/ResponseBox.css";
 import leftArrow from "../assets/left.svg";
@@ -62,8 +63,6 @@ export default function AdministrationPage({
     );
     const [scrollTargetByCard, setScrollTargetByCard] = useState({});
     const [isSaving, setIsSaving] = useState(false);
-    const cancelButtonRef = useRef(null);
-    const confirmButtonRef = useRef(null);
     const responseBoxRefs = useRef({});
 
     const slides = useMemo(
@@ -74,42 +73,6 @@ export default function AdministrationPage({
             })),
         []
     );
-
-    useEffect(() => {
-        if (!showInquiryConfirm) return;
-
-        cancelButtonRef.current?.focus();
-
-        const handleKeyDown = (event) => {
-            if (event.key === "Escape" && !isSubmitting && !isSaving) {
-                event.preventDefault();
-                setShowInquiryConfirm(false);
-                return;
-            }
-
-            if (event.key !== "Tab") return;
-
-            const focusable = [cancelButtonRef.current, confirmButtonRef.current].filter(Boolean);
-            if (focusable.length === 0) return;
-
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            const active = document.activeElement;
-
-            if (event.shiftKey) {
-                if (active === first) {
-                    event.preventDefault();
-                    last.focus();
-                }
-            } else if (active === last) {
-                event.preventDefault();
-                first.focus();
-            }
-        };
-
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [showInquiryConfirm, isSubmitting, isSaving]);
 
     useEffect(() => {
         if (Object.keys(scrollTargetByCard).length === 0) return;
@@ -336,7 +299,6 @@ export default function AdministrationPage({
                     type="button"
                     className="administration-page__back"
                     onClick={onNavigateMenu}
-                    tabIndex={showInquiryConfirm ? -1 : 0}
                     disabled={isSaving}
                 >
                     <span className="administration-page__back-icon" aria-hidden="true">
@@ -358,7 +320,6 @@ export default function AdministrationPage({
                     onClick={goPrevious}
                     disabled={currentSlide === 0 || isSaving}
                     aria-label="Previous Card"
-                    tabIndex={showInquiryConfirm || currentSlide === 0 ? -1 : 0}
                 >
                     <img className="carousel-arrow-icon" src={leftArrow} alt="" aria-hidden="true" />
                 </button>
@@ -428,7 +389,6 @@ export default function AdministrationPage({
                                                         onClick={handleOpenInquiryConfirm}
                                                         aria-label="Begin Inquiry Phase"
                                                         disabled={isSubmitting || isSaving}
-                                                        tabIndex={showInquiryConfirm ? -1 : 0}
                                                     >
                                                         <span className="vertically_align_text">
                                                             {isSubmitting || isSaving ? "Loading..." : "Inquiry"}
@@ -450,7 +410,6 @@ export default function AdministrationPage({
                     onClick={goNext}
                     disabled={atLastSlide || isSaving}
                     aria-label="Next Card"
-                    tabIndex={showInquiryConfirm || atLastSlide ? -1 : 0}
                 >
                     <img className="carousel-arrow-icon" src={rightArrow} alt="" aria-hidden="true" />
                 </button>
@@ -465,7 +424,6 @@ export default function AdministrationPage({
                         aria-selected={currentSlide === index}
                         className={`carousel__indicator ${currentSlide === index ? "current-slide" : ""}`}
                         onClick={() => goToSlide(index)}
-                        tabIndex={showInquiryConfirm ? -1 : 0}
                         disabled={isSaving}
                     >
                         <div className="card__style">{slide.label}</div>
@@ -473,52 +431,20 @@ export default function AdministrationPage({
                 ))}
             </div>
 
-            {showInquiryConfirm && (
-                <div
-                    className="administration-page__modal-backdrop"
-                    role="presentation"
-                    onClick={handleCloseInquiryConfirm}
-                >
-                    <div
-                        className="administration-page__modal"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="administration-inquiry-title"
-                        aria-describedby="administration-inquiry-text"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <h2 id="administration-inquiry-title" className="administration-page__modal-title">
-                            Begin Inquiry?
-                        </h2>
-
-                        <p id="administration-inquiry-text" className="administration-page__modal-text">
-                            Are you sure you want to transition to the Inquiry Phase?
-                        </p>
-
-                        <div className="administration-page__modal-actions">
-                            <button
-                                ref={cancelButtonRef}
-                                type="button"
-                                className="administration-page__modal-button administration-page__modal-button--secondary"
-                                onClick={handleCloseInquiryConfirm}
-                                disabled={isSubmitting || isSaving}
-                            >
-                                Cancel
-                            </button>
-
-                            <button
-                                ref={confirmButtonRef}
-                                type="button"
-                                className="administration-page__modal-button administration-page__modal-button--primary"
-                                onClick={handleConfirmInquiry}
-                                disabled={isSubmitting || isSaving}
-                            >
-                                {isSubmitting || isSaving ? "Loading..." : "Confirm"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmationDialog
+                open={showInquiryConfirm}
+                title="Begin Inquiry?"
+                message="Are you sure you want to transition to the Inquiry Phase?"
+                confirmText={isSubmitting || isSaving ? "Loading..." : "Confirm"}
+                cancelText="Cancel"
+                onConfirm={handleConfirmInquiry}
+                onCancel={handleCloseInquiryConfirm}
+                isBusy={isSubmitting || isSaving}
+                variant="default"
+                role="dialog"
+                closeOnBackdrop={true}
+                initialFocus="cancel"
+            />
         </div>
     );
 }

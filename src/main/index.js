@@ -4,11 +4,12 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import {
   getDb,
+  closeDb,
   getDbVersion,
   createSession,
   listRecentSessions,
   listMenuAdministrations,
-  updateClientLabel,
+  updateSessionParticipantLabel,
   updateSessionStatus,
   createResponse,
   updateResponse,
@@ -49,6 +50,12 @@ function createWindow() {
   }
 }
 
+function getActorId(event) {
+  const processId = event?.senderFrame?.processId ?? event?.processId ?? 'unknown-process'
+  const frameId = event?.senderFrame?.routingId ?? event?.frameId ?? 'unknown-frame'
+  return `renderer:${processId}:${frameId}`
+}
+
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
 
@@ -77,8 +84,9 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('session:create', (_event, payload) => {
+  ipcMain.handle('session:create', (event, payload) => {
     const participantLabel = String(payload?.participantLabel ?? '').trim()
+    const actorId = getActorId(event)
 
     if (!participantLabel) {
       return {
@@ -87,7 +95,7 @@ app.whenReady().then(() => {
       }
     }
 
-    return createSession(participantLabel)
+    return createSession(participantLabel, actorId)
   })
 
   ipcMain.handle('session:listRecent', (_event, payload) => {
@@ -98,36 +106,43 @@ app.whenReady().then(() => {
     return listMenuAdministrations(payload?.limit)
   })
 
-  ipcMain.handle('client:updateLabel', (_event, payload) => {
-    return updateClientLabel(payload?.clientId, payload?.clientLabel)
+  ipcMain.handle('session:updateParticipantLabel', (event, payload) => {
+    const actorId = getActorId(event)
+    return updateSessionParticipantLabel(payload?.sessionId, payload?.participantLabel, actorId)
   })
 
-  ipcMain.handle('session:updateStatus', (_event, payload) => {
-    return updateSessionStatus(payload?.sessionId, payload?.status)
+  ipcMain.handle('session:updateStatus', (event, payload) => {
+    const actorId = getActorId(event)
+    return updateSessionStatus(payload?.sessionId, payload?.status, actorId)
   })
 
-  ipcMain.handle('response:create', (_event, payload) => {
-    return createResponse(payload)
+  ipcMain.handle('response:create', (event, payload) => {
+    const actorId = getActorId(event)
+    return createResponse(payload, actorId)
   })
 
   ipcMain.handle('response:listForSession', (_event, payload) => {
     return listResponsesForSession(payload?.sessionId)
   })
 
-  ipcMain.handle('response:update', (_event, payload) => {
-    return updateResponse(payload?.responseId, payload?.updates)
+  ipcMain.handle('response:update', (event, payload) => {
+    const actorId = getActorId(event)
+    return updateResponse(payload?.responseId, payload?.updates, actorId)
   })
 
-  ipcMain.handle('response:upsert', (_event, payload) => {
-  return upsertResponse(payload)
-})
-
-  ipcMain.handle('response:delete', (_event, payload) => {
-    return deleteResponse(payload?.responseId)
+  ipcMain.handle('response:upsert', (event, payload) => {
+    const actorId = getActorId(event)
+    return upsertResponse(payload, actorId)
   })
 
-  ipcMain.handle('session:delete', (_event, payload) => {
+  ipcMain.handle('response:delete', (event, payload) => {
+    const actorId = getActorId(event)
+    return deleteResponse(payload?.responseId, actorId)
+  })
+
+  ipcMain.handle('session:delete', (event, payload) => {
     const sessionId = String(payload?.sessionId ?? '').trim()
+    const actorId = getActorId(event)
 
     if (!sessionId) {
       return {
@@ -136,14 +151,18 @@ app.whenReady().then(() => {
       }
     }
 
-  return deleteSession(sessionId)
-})
+    return deleteSession(sessionId, actorId)
+  })
 
   createWindow()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', () => {
+  closeDb()
 })
 
 app.on('window-all-closed', () => {

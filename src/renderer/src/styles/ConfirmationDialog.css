@@ -1,0 +1,127 @@
+.confirmation-dialog__backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+}
+
+.confirmation-dialog {
+    width: 100%;
+    max-width: 460px;
+    background: #222;
+    border: 2px solid #111;
+    border-radius: 18px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    padding: 24px 24px 22px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.confirmation-dialog__title {
+    margin: 0 0 14px;
+    color: #03dac6;
+    font-size: 22pt;
+    font-weight: 800;
+    font-family: Tahoma, sans-serif;
+}
+
+.confirmation-dialog__body {
+    margin: 0;
+}
+
+.confirmation-dialog__text {
+    margin: 0;
+    color: #707070;
+    font-size: 14pt;
+    font-weight: bold;
+    line-height: 1.5;
+    font-family: "Segoe UI", Tahoma, sans-serif;
+}
+
+.confirmation-dialog__body strong {
+    color: #03dac6;
+}
+
+.confirmation-dialog__actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.confirmation-dialog__button {
+    min-width: 130px;
+    height: 48px;
+    border-radius: 8px;
+    font-family: Tahoma, sans-serif;
+    font-size: 14pt;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0 18px;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.confirmation-dialog__button--secondary {
+    background: transparent;
+    color: #707070;
+    border: 1px solid #4d4d4d;
+}
+
+.confirmation-dialog__button--secondary:hover:not(:disabled) {
+    background-color: #000;
+}
+
+.confirmation-dialog__button--primary {
+    background: #03dac6;
+    color: #111;
+    border: 1px solid #03dac6;
+}
+
+.confirmation-dialog__button--primary:hover:not(:disabled) {
+    background-color: #000;
+    color: #707070;
+    border: 1px solid #4d4d4d;
+}
+
+.confirmation-dialog__button--danger {
+    background: #03dac6;
+    color: #111;
+    border: 1px solid #03dac6;
+}
+
+.confirmation-dialog__button--danger:hover:not(:disabled) {
+    background-color: #000;
+    color: #707070;
+    border: 1px solid #4d4d4d;
+}
+
+.confirmation-dialog__button:disabled {
+    opacity: 0.7;
+    cursor: default;
+}
+
+.confirmation-dialog__button:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+.confirmation-dialog__button:focus-visible {
+    outline: 2px solid #03dac6;
+    outline-offset: 3px;
+    box-shadow: 0 0 0 3px rgba(3, 218, 198, 0.18);
+    border-color: #03dac6;
+}
+
+@media (max-width: 720px) {
+    .confirmation-dialog__actions {
+        flex-direction: column;
+    }
+
+    .confirmation-dialog__button {
+        width: 100%;
+    }
+}

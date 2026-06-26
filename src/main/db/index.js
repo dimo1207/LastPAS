@@ -5,37 +5,21 @@ import fs from 'fs'
 import crypto from 'node:crypto'
 
 let db
-
-function ensureColumn(database, tableName, columnName, columnSql) {
-  const columns = database.prepare(`PRAGMA table_info(${tableName})`).all()
-  const exists = columns.some((column) => column.name === columnName)
-
-  if (!exists) {
-    database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnSql}`)
-  }
-}
+let dbFilePath
 
 function ensureSchema(database) {
   database.exec(`
-    CREATE TABLE IF NOT EXISTS clients (
-      client_id TEXT PRIMARY KEY,
-      client_label TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1))
-    ) STRICT;
-
     CREATE TABLE IF NOT EXISTS assessment_sessions (
       session_id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL,
+      participant_id TEXT NOT NULL,
+      participant_label TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'in_progress', 'complete')),
       validity_status TEXT NOT NULL DEFAULT 'invalid',
       coding_percentage INTEGER NOT NULL DEFAULT 0 CHECK (coding_percentage BETWEEN 0 AND 100),
       location_system TEXT,
-      locked INTEGER NOT NULL DEFAULT 0 CHECK (locked IN (0, 1)),
-      FOREIGN KEY (client_id) REFERENCES clients(client_id) ON DELETE CASCADE
+      locked INTEGER NOT NULL DEFAULT 0 CHECK (locked IN (0, 1))
     ) STRICT;
 
     CREATE TABLE IF NOT EXISTS responses (
@@ -88,15 +72,23 @@ function ensureSchema(database) {
     CREATE TABLE IF NOT EXISTS audit_log (
       audit_id TEXT PRIMARY KEY,
       created_at TEXT NOT NULL,
+      actor_type TEXT NOT NULL CHECK (actor_type IN ('user', 'system')),
+      actor_id TEXT NOT NULL,
       action_type TEXT NOT NULL,
       entity_type TEXT NOT NULL,
       entity_id TEXT,
       session_id TEXT,
-      details_json TEXT
+      outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure')),
+      reason_code TEXT,
+      metadata_json TEXT,
+      CHECK (
+        metadata_json IS NULL
+        OR json_valid(metadata_json)
+      )
     ) STRICT;
 
-    CREATE INDEX IF NOT EXISTS idx_assessment_sessions_client_id
-      ON assessment_sessions(client_id);
+    CREATE INDEX IF NOT EXISTS idx_assessment_sessions_participant_id
+      ON assessment_sessions(participant_id);
 
     CREATE INDEX IF NOT EXISTS idx_responses_session_id
       ON responses(session_id);
@@ -104,12 +96,18 @@ function ensureSchema(database) {
     CREATE INDEX IF NOT EXISTS idx_report_exports_session_id
       ON report_exports(session_id);
 
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created_at
+      ON audit_log(created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_audit_log_actor_id
+      ON audit_log(actor_id);
+
     CREATE INDEX IF NOT EXISTS idx_audit_log_session_id
       ON audit_log(session_id);
-  `)
 
-  ensureColumn(database, 'clients', 'client_label', 'client_label TEXT')
-  ensureColumn(database, 'responses', 'response_notes', 'response_notes TEXT')
+    CREATE INDEX IF NOT EXISTS idx_audit_log_entity_type_entity_id
+      ON audit_log(entity_type, entity_id);
+  `)
 }
 
 function makeId(prefix) {
@@ -135,26 +133,64 @@ function normalizeNullableBooleanInteger(value) {
   return value ? 1 : 0
 }
 
-export function getDb() {
-  if (db) return db
-
+function getDbPath() {
   const userDataPath = app.getPath('userData')
   if (!fs.existsSync(userDataPath)) {
     fs.mkdirSync(userDataPath, { recursive: true })
   }
+  return path.join(userDataPath, 'lastpas.sqlite')
+}
 
-  const dbPath = path.join(userDataPath, 'lastpas.sqlite')
-  db = new Database(dbPath)
+function sanitizeAuditMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return null
 
-  db.pragma('journal_mode = WAL')
+  const allowed = {}
+  const allowlist = new Set([
+    'fieldNames',
+    'statusFrom',
+    'statusTo',
+    'validityStatusFrom',
+    'validityStatusTo',
+    'codingPercentageFrom',
+    'codingPercentageTo',
+    'exportFormat',
+    'exportStatus',
+    'recordCount',
+    'appVersion'
+  ])
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!allowlist.has(key)) continue
+    if (value === undefined) continue
+    allowed[key] = value
+  }
+
+  return Object.keys(allowed).length > 0 ? JSON.stringify(allowed) : null
+}
+
+export function getDb() {
+  if (db) return db
+
+  dbFilePath = getDbPath()
+  db = new Database(dbFilePath)
+
+  db.pragma('journal_mode = DELETE')
+  db.pragma('secure_delete = ON')
   db.pragma('foreign_keys = ON')
-  db.pragma('synchronous = NORMAL')
+  db.pragma('temp_store = MEMORY')
+  db.pragma('synchronous = FULL')
 
   ensureSchema(db)
 
-  console.log('Database ready at:', dbPath)
+  console.log('Database ready at:', dbFilePath)
 
   return db
+}
+
+export function closeDb() {
+  if (!db) return
+  db.close()
+  db = undefined
 }
 
 export function getDbVersion() {
@@ -163,11 +199,72 @@ export function getDbVersion() {
   return row?.version ?? 'unknown'
 }
 
-export function createSession(participantLabel) {
+export function writeAuditEvent({
+  actorType = 'user',
+  actorId,
+  actionType,
+  entityType,
+  entityId = null,
+  sessionId = null,
+  outcome = 'success',
+  reasonCode = null,
+  metadata = null
+}) {
+  const database = getDb()
+
+  if (!actorId || !actionType || !entityType) {
+    throw new Error('Missing required audit fields')
+  }
+
+  const auditId = makeId('audit')
+  const createdAt = nowUtc()
+  const metadataJson = sanitizeAuditMetadata(metadata)
+
+  database.prepare(`
+    INSERT INTO audit_log (
+      audit_id,
+      created_at,
+      actor_type,
+      actor_id,
+      action_type,
+      entity_type,
+      entity_id,
+      session_id,
+      outcome,
+      reason_code,
+      metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    auditId,
+    createdAt,
+    actorType,
+    actorId,
+    actionType,
+    entityType,
+    entityId,
+    sessionId,
+    outcome,
+    reasonCode,
+    metadataJson
+  )
+
+  return auditId
+}
+
+export function createSession(participantLabel, actorId = 'system') {
   const database = getDb()
   const normalizedLabel = normalizeRequiredText(participantLabel)
 
   if (!normalizedLabel) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'session.create',
+      entityType: 'assessment_session',
+      outcome: 'failure',
+      reasonCode: 'missing-participant-label'
+    })
+
     return {
       ok: false,
       error: 'missing-participant-label'
@@ -176,22 +273,14 @@ export function createSession(participantLabel) {
 
   const run = database.transaction((label) => {
     const timestamp = nowUtc()
-    const clientId = makeId('cli')
+    const participantId = makeId('part')
     const sessionId = makeId('sess')
-
-    database.prepare(`
-      INSERT INTO clients (
-        client_id,
-        client_label,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?)
-    `).run(clientId, label, timestamp, timestamp)
 
     database.prepare(`
       INSERT INTO assessment_sessions (
         session_id,
-        client_id,
+        participant_id,
+        participant_label,
         created_at,
         updated_at,
         status,
@@ -199,10 +288,11 @@ export function createSession(participantLabel) {
         coding_percentage,
         location_system,
         locked
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       sessionId,
-      clientId,
+      participantId,
+      label,
       timestamp,
       timestamp,
       'draft',
@@ -212,13 +302,25 @@ export function createSession(participantLabel) {
       0
     )
 
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'session.create',
+      entityType: 'assessment_session',
+      entityId: sessionId,
+      sessionId,
+      outcome: 'success',
+      metadata: {
+        recordCount: 1
+      }
+    })
+
     return {
       ok: true,
       session: {
         sessionId,
-        clientId,
+        participantId,
         participantLabel: label,
-        clientLabel: label,
         createdAt: timestamp,
         updatedAt: timestamp,
         status: 'draft',
@@ -239,16 +341,13 @@ export function listRecentSessions(limit = 10) {
     .prepare(`
       SELECT
         s.session_id AS sessionId,
-        s.client_id AS clientId,
-        c.client_label AS clientLabel,
-        c.client_label AS participantLabel,
+        s.participant_id AS participantId,
+        s.participant_label AS participantLabel,
         s.created_at AS createdAt,
         s.updated_at AS updatedAt,
         s.status AS status,
         s.validity_status AS validityStatus
       FROM assessment_sessions s
-      JOIN clients c
-        ON c.client_id = s.client_id
       ORDER BY s.created_at DESC
       LIMIT ?
     `)
@@ -263,9 +362,8 @@ export function listMenuAdministrations(limit = 50) {
     .prepare(`
       SELECT
         s.session_id AS sessionId,
-        s.client_id AS clientId,
-        COALESCE(c.client_label, '—') AS participantLabel,
-        c.client_label AS clientLabel,
+        s.participant_id AS participantId,
+        s.participant_label AS participantLabel,
         s.created_at AS dateAdministered,
         s.created_at AS createdAt,
         s.updated_at AS updatedAt,
@@ -277,14 +375,12 @@ export function listMenuAdministrations(limit = 50) {
         END AS administrationStatus,
         CAST(s.coding_percentage AS TEXT) || '%' AS codingPercentage
       FROM assessment_sessions s
-      JOIN clients c
-        ON c.client_id = s.client_id
       LEFT JOIN responses r
         ON r.session_id = s.session_id
       GROUP BY
         s.session_id,
-        s.client_id,
-        c.client_label,
+        s.participant_id,
+        s.participant_label,
         s.created_at,
         s.updated_at,
         s.status,
@@ -296,34 +392,93 @@ export function listMenuAdministrations(limit = 50) {
     .all(safeLimit)
 }
 
-export function updateClientLabel(clientId, clientLabel) {
+export function updateSessionParticipantLabel(sessionId, participantLabel, actorId = 'system') {
   const database = getDb()
-  const normalizedLabel = clientLabel?.trim() || null
+  const normalizedLabel = normalizeRequiredText(participantLabel)
   const timestamp = nowUtc()
+
+  if (!sessionId) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'session.update-participant-label',
+      entityType: 'assessment_session',
+      outcome: 'failure',
+      reasonCode: 'missing-session-id'
+    })
+
+    return {
+      ok: false,
+      error: 'missing-session-id'
+    }
+  }
+
+  if (!normalizedLabel) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'session.update-participant-label',
+      entityType: 'assessment_session',
+      entityId: sessionId,
+      sessionId,
+      outcome: 'failure',
+      reasonCode: 'missing-participant-label'
+    })
+
+    return {
+      ok: false,
+      error: 'missing-participant-label'
+    }
+  }
 
   const result = database
     .prepare(`
-      UPDATE clients
+      UPDATE assessment_sessions
       SET
-        client_label = ?,
+        participant_label = ?,
         updated_at = ?
-      WHERE client_id = ?
+      WHERE session_id = ?
     `)
-    .run(normalizedLabel, timestamp, clientId)
+    .run(normalizedLabel, timestamp, sessionId)
+
+  writeAuditEvent({
+    actorType: actorId === 'system' ? 'system' : 'user',
+    actorId,
+    actionType: 'session.update-participant-label',
+    entityType: 'assessment_session',
+    entityId: sessionId,
+    sessionId,
+    outcome: result.changes > 0 ? 'success' : 'failure',
+    reasonCode: result.changes > 0 ? null : 'session-not-found',
+    metadata: {
+      fieldNames: ['participant_label']
+    }
+  })
 
   return {
     ok: result.changes > 0,
-    clientId,
-    clientLabel: normalizedLabel,
+    sessionId,
+    participantLabel: normalizedLabel,
     updatedAt: timestamp
   }
 }
 
-export function updateSessionStatus(sessionId, status) {
+export function updateSessionStatus(sessionId, status, actorId = 'system') {
   const database = getDb()
   const allowedStatuses = new Set(['draft', 'in_progress', 'complete'])
 
   if (!allowedStatuses.has(status)) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'session.update-status',
+      entityType: 'assessment_session',
+      entityId: sessionId ?? null,
+      sessionId: sessionId ?? null,
+      outcome: 'failure',
+      reasonCode: 'invalid-status'
+    })
+
     return {
       ok: false,
       error: 'invalid-status',
@@ -331,6 +486,14 @@ export function updateSessionStatus(sessionId, status) {
       status
     }
   }
+
+  const existing = database
+    .prepare(`
+      SELECT status
+      FROM assessment_sessions
+      WHERE session_id = ?
+    `)
+    .get(sessionId)
 
   const timestamp = nowUtc()
 
@@ -344,6 +507,22 @@ export function updateSessionStatus(sessionId, status) {
     `)
     .run(status, timestamp, sessionId)
 
+  writeAuditEvent({
+    actorType: actorId === 'system' ? 'system' : 'user',
+    actorId,
+    actionType: 'session.update-status',
+    entityType: 'assessment_session',
+    entityId: sessionId,
+    sessionId,
+    outcome: result.changes > 0 ? 'success' : 'failure',
+    reasonCode: result.changes > 0 ? null : 'session-not-found',
+    metadata: {
+      fieldNames: ['status'],
+      statusFrom: existing?.status ?? null,
+      statusTo: status
+    }
+  })
+
   return {
     ok: result.changes > 0,
     sessionId,
@@ -352,7 +531,7 @@ export function updateSessionStatus(sessionId, status) {
   }
 }
 
-export function createResponse(input) {
+export function createResponse(input, actorId = 'system') {
   const database = getDb()
   const timestamp = nowUtc()
 
@@ -362,6 +541,15 @@ export function createResponse(input) {
   const responseText = normalizeRequiredText(input?.responseText)
 
   if (!sessionId) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.create',
+      entityType: 'response',
+      outcome: 'failure',
+      reasonCode: 'missing-session-id'
+    })
+
     return {
       ok: false,
       error: 'missing-session-id'
@@ -369,6 +557,16 @@ export function createResponse(input) {
   }
 
   if (!Number.isInteger(responseNumber) || responseNumber < 1) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.create',
+      entityType: 'response',
+      sessionId,
+      outcome: 'failure',
+      reasonCode: 'invalid-response-number'
+    })
+
     return {
       ok: false,
       error: 'invalid-response-number'
@@ -376,6 +574,16 @@ export function createResponse(input) {
   }
 
   if (!cardNumber) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.create',
+      entityType: 'response',
+      sessionId,
+      outcome: 'failure',
+      reasonCode: 'missing-card-number'
+    })
+
     return {
       ok: false,
       error: 'missing-card-number'
@@ -383,6 +591,16 @@ export function createResponse(input) {
   }
 
   if (!responseText) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.create',
+      entityType: 'response',
+      sessionId,
+      outcome: 'failure',
+      reasonCode: 'missing-response-text'
+    })
+
     return {
       ok: false,
       error: 'missing-response-text'
@@ -414,6 +632,20 @@ export function createResponse(input) {
         responseText
       )
 
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.create',
+      entityType: 'response',
+      entityId: responseId,
+      sessionId,
+      outcome: 'success',
+      metadata: {
+        fieldNames: ['card_number', 'response_text'],
+        recordCount: 1
+      }
+    })
+
     return {
       ok: result.changes > 0,
       responseId,
@@ -428,6 +660,16 @@ export function createResponse(input) {
     const message = String(error)
 
     if (message.includes('UNIQUE constraint failed: responses.session_id, responses.response_number')) {
+      writeAuditEvent({
+        actorType: actorId === 'system' ? 'system' : 'user',
+        actorId,
+        actionType: 'response.create',
+        entityType: 'response',
+        sessionId,
+        outcome: 'failure',
+        reasonCode: 'duplicate-response-number'
+      })
+
       return {
         ok: false,
         error: 'duplicate-response-number',
@@ -437,6 +679,16 @@ export function createResponse(input) {
     }
 
     if (message.includes('FOREIGN KEY constraint failed')) {
+      writeAuditEvent({
+        actorType: actorId === 'system' ? 'system' : 'user',
+        actorId,
+        actionType: 'response.create',
+        entityType: 'response',
+        sessionId,
+        outcome: 'failure',
+        reasonCode: 'invalid-session-id'
+      })
+
       return {
         ok: false,
         error: 'invalid-session-id',
@@ -489,16 +741,33 @@ export function listResponsesForSession(sessionId) {
     .all(sessionId)
 }
 
-export function updateResponse(responseId, input) {
+export function updateResponse(responseId, input, actorId = 'system') {
   const database = getDb()
   const timestamp = nowUtc()
 
   if (!responseId) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.update',
+      entityType: 'response',
+      outcome: 'failure',
+      reasonCode: 'missing-response-id'
+    })
+
     return {
       ok: false,
       error: 'missing-response-id'
     }
   }
+
+  const existing = database
+    .prepare(`
+      SELECT session_id AS sessionId
+      FROM responses
+      WHERE response_id = ?
+    `)
+    .get(responseId)
 
   const allowedFields = {
     response_number: (value) => {
@@ -544,6 +813,17 @@ export function updateResponse(responseId, input) {
   }
 
   if (setParts.length === 0) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.update',
+      entityType: 'response',
+      entityId: responseId,
+      sessionId: existing?.sessionId ?? null,
+      outcome: 'failure',
+      reasonCode: 'no-valid-fields'
+    })
+
     return {
       ok: false,
       error: 'no-valid-fields',
@@ -564,6 +844,20 @@ export function updateResponse(responseId, input) {
       `)
       .run(...values)
 
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.update',
+      entityType: 'response',
+      entityId: responseId,
+      sessionId: existing?.sessionId ?? null,
+      outcome: result.changes > 0 ? 'success' : 'failure',
+      reasonCode: result.changes > 0 ? null : 'response-not-found',
+      metadata: {
+        fieldNames: Object.keys(normalizedUpdates)
+      }
+    })
+
     return {
       ok: result.changes > 0,
       responseId,
@@ -574,6 +868,17 @@ export function updateResponse(responseId, input) {
     const message = String(error)
 
     if (message.includes('UNIQUE constraint failed: responses.session_id, responses.response_number')) {
+      writeAuditEvent({
+        actorType: actorId === 'system' ? 'system' : 'user',
+        actorId,
+        actionType: 'response.update',
+        entityType: 'response',
+        entityId: responseId,
+        sessionId: existing?.sessionId ?? null,
+        outcome: 'failure',
+        reasonCode: 'duplicate-response-number'
+      })
+
       return {
         ok: false,
         error: 'duplicate-response-number',
@@ -585,33 +890,62 @@ export function updateResponse(responseId, input) {
   }
 }
 
-export function upsertResponse(input) {
+export function upsertResponse(input, actorId = 'system') {
   const database = getDb()
   const timestamp = nowUtc()
 
-  const sessionId = String(input?.sessionId ?? "").trim()
+  const sessionId = String(input?.sessionId ?? '').trim()
   const responseNumber = Number(input?.responseNumber)
   const cardNumber = normalizeRequiredText(input?.cardNumber)
-  const responseText = String(input?.responseText ?? "").trim()
+  const responseText = String(input?.responseText ?? '').trim()
 
   if (!sessionId) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.upsert',
+      entityType: 'response',
+      outcome: 'failure',
+      reasonCode: 'missing-session-id'
+    })
+
     return {
       ok: false,
-      error: "missing-session-id"
+      error: 'missing-session-id'
     }
   }
 
   if (!Number.isInteger(responseNumber) || responseNumber < 1) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.upsert',
+      entityType: 'response',
+      sessionId,
+      outcome: 'failure',
+      reasonCode: 'invalid-response-number'
+    })
+
     return {
       ok: false,
-      error: "invalid-response-number"
+      error: 'invalid-response-number'
     }
   }
 
   if (!cardNumber) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.upsert',
+      entityType: 'response',
+      sessionId,
+      outcome: 'failure',
+      reasonCode: 'missing-card-number'
+    })
+
     return {
       ok: false,
-      error: "missing-card-number"
+      error: 'missing-card-number'
     }
   }
 
@@ -648,18 +982,40 @@ export function upsertResponse(input) {
         normalizeNullableBooleanInteger(input?.touchedCard),
         normalizeOptionalText(
           input?.rOptimized === true
-            ? "true"
+            ? 'true'
             : input?.rOptimized === false
-            ? "false"
+            ? 'false'
             : input?.rOptimized
         ),
         timestamp,
         existing.responseId
       )
 
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.upsert',
+      entityType: 'response',
+      entityId: existing.responseId,
+      sessionId,
+      outcome: result.changes > 0 ? 'success' : 'failure',
+      reasonCode: result.changes > 0 ? null : 'response-not-found',
+      metadata: {
+        fieldNames: [
+          'card_number',
+          'response_text',
+          'response_notes',
+          'inquiry_text',
+          'orientation',
+          'touched_card',
+          'r_optimized'
+        ]
+      }
+    })
+
     return {
       ok: result.changes > 0,
-      mode: "update",
+      mode: 'update',
       responseId: existing.responseId,
       sessionId,
       responseNumber,
@@ -667,7 +1023,7 @@ export function upsertResponse(input) {
     }
   }
 
-  const responseId = makeId("resp")
+  const responseId = makeId('resp')
 
   const result = database
     .prepare(`
@@ -700,16 +1056,38 @@ export function upsertResponse(input) {
       normalizeNullableBooleanInteger(input?.touchedCard),
       normalizeOptionalText(
         input?.rOptimized === true
-          ? "true"
+          ? 'true'
           : input?.rOptimized === false
-          ? "false"
+          ? 'false'
           : input?.rOptimized
       )
     )
 
+  writeAuditEvent({
+    actorType: actorId === 'system' ? 'system' : 'user',
+    actorId,
+    actionType: 'response.upsert',
+    entityType: 'response',
+    entityId: responseId,
+    sessionId,
+    outcome: 'success',
+    metadata: {
+      fieldNames: [
+        'card_number',
+        'response_text',
+        'response_notes',
+        'inquiry_text',
+        'orientation',
+        'touched_card',
+        'r_optimized'
+      ],
+      recordCount: 1
+    }
+  })
+
   return {
     ok: result.changes > 0,
-    mode: "create",
+    mode: 'create',
     responseId,
     sessionId,
     responseNumber,
@@ -718,15 +1096,32 @@ export function upsertResponse(input) {
   }
 }
 
-export function deleteResponse(responseId) {
+export function deleteResponse(responseId, actorId = 'system') {
   const database = getDb()
 
   if (!responseId) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'response.delete',
+      entityType: 'response',
+      outcome: 'failure',
+      reasonCode: 'missing-response-id'
+    })
+
     return {
       ok: false,
       error: 'missing-response-id'
     }
   }
+
+  const existing = database
+    .prepare(`
+      SELECT session_id AS sessionId
+      FROM responses
+      WHERE response_id = ?
+    `)
+    .get(responseId)
 
   const result = database
     .prepare(`
@@ -735,62 +1130,73 @@ export function deleteResponse(responseId) {
     `)
     .run(responseId)
 
+  writeAuditEvent({
+    actorType: actorId === 'system' ? 'system' : 'user',
+    actorId,
+    actionType: 'response.delete',
+    entityType: 'response',
+    entityId: responseId,
+    sessionId: existing?.sessionId ?? null,
+    outcome: result.changes > 0 ? 'success' : 'failure',
+    reasonCode: result.changes > 0 ? null : 'response-not-found'
+  })
+
   return {
     ok: result.changes > 0,
     responseId
   }
 }
 
-export function deleteSession(sessionId) {
+export function deleteSession(sessionId, actorId = 'system') {
   const database = getDb()
   const normalizedSessionId = String(sessionId ?? '').trim()
 
   if (!normalizedSessionId) {
+    writeAuditEvent({
+      actorType: actorId === 'system' ? 'system' : 'user',
+      actorId,
+      actionType: 'session.delete',
+      entityType: 'assessment_session',
+      outcome: 'failure',
+      reasonCode: 'missing-session-id'
+    })
+
     return {
       ok: false,
       error: 'missing-session-id'
     }
   }
 
-  const clientRow = database
-    .prepare(`
-      SELECT client_id AS clientId
-      FROM assessment_sessions
-      WHERE session_id = ?
-    `)
-    .get(normalizedSessionId)
-
-  if (!clientRow?.clientId) {
-    return {
-      ok: false,
-      error: 'session-not-found',
-      sessionId: normalizedSessionId
-    }
-  }
-
-  const result = database.transaction((targetSessionId, clientId) => {
-    const deletedSession = database
+  const run = database.transaction((id) => {
+    const result = database
       .prepare(`
         DELETE FROM assessment_sessions
         WHERE session_id = ?
       `)
-      .run(targetSessionId)
+      .run(id)
 
-    const deletedClient = database
-      .prepare(`
-        DELETE FROM clients
-        WHERE client_id = ?
-      `)
-      .run(clientId)
+    return result
+  })
 
-    return {
-      ok: deletedSession.changes > 0,
-      sessionId: targetSessionId,
-      clientId,
-      deletedSessionRows: deletedSession.changes,
-      deletedClientRows: deletedClient.changes
-    }
-  })(normalizedSessionId, clientRow.clientId)
+  const result = run(normalizedSessionId)
 
-  return result
+  if (result.changes > 0) {
+    database.exec('VACUUM')
+  }
+
+  writeAuditEvent({
+    actorType: actorId === 'system' ? 'system' : 'user',
+    actorId,
+    actionType: 'session.delete',
+    entityType: 'assessment_session',
+    entityId: normalizedSessionId,
+    sessionId: normalizedSessionId,
+    outcome: result.changes > 0 ? 'success' : 'failure',
+    reasonCode: result.changes > 0 ? null : 'session-not-found'
+  })
+
+  return {
+    ok: result.changes > 0,
+    sessionId: normalizedSessionId
+  }
 }

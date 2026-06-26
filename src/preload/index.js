@@ -16,8 +16,8 @@ const api = {
   listMenuAdministrations: (limit) =>
     ipcRenderer.invoke('menu:listAdministrations', { limit }),
 
-  updateClientLabel: (clientId, clientLabel) =>
-    ipcRenderer.invoke('client:updateLabel', { clientId, clientLabel }),
+  updateSessionParticipantLabel: (sessionId, participantLabel) =>
+    ipcRenderer.invoke('session:updateParticipantLabel', { sessionId, participantLabel }),
 
   updateSessionStatus: (sessionId, status) =>
     ipcRenderer.invoke('session:updateStatus', { sessionId, status }),

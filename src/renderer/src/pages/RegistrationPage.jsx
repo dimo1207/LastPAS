@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ConfirmationDialog from '../components/ConfirmationDialog'
 import '../styles/RegistrationPage.css'
 
 function RegistrationPage({ onNavigateMenu, onRegistrationComplete }) {
@@ -9,67 +10,11 @@ function RegistrationPage({ onNavigateMenu, onRegistrationComplete }) {
 
     const trimmedLabel = useMemo(() => participantLabel.trim(), [participantLabel])
 
-    const beginButtonRef = useRef(null)
-    const cancelButtonRef = useRef(null)
-    const modalRef = useRef(null)
-    const previousFocusRef = useRef(null)
-    const textInputRef = useRef(null);
+    const textInputRef = useRef(null)
 
     useEffect(() => {
-        textInputRef.current?.focus();
-    }, []);
-
-    useEffect(() => {
-        if (showConfirmModal) {
-            previousFocusRef.current = document.activeElement
-            cancelButtonRef.current?.focus()
-            return
-        }
-
-        previousFocusRef.current?.focus?.()
-    }, [showConfirmModal])
-
-    useEffect(() => {
-        if (!showConfirmModal) return
-
-        function handleKeyDown(event) {
-            if (event.key === 'Escape') {
-                if (!isSubmitting) {
-                    setShowConfirmModal(false)
-                }
-                return
-            }
-
-            if (event.key !== 'Tab') return
-
-            const focusable = modalRef.current?.querySelectorAll(
-                'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-            )
-
-            if (!focusable || focusable.length === 0) return
-
-            const firstElement = focusable[0]
-            const lastElement = focusable[focusable.length - 1]
-
-            if (event.shiftKey) {
-                if (document.activeElement === firstElement) {
-                    event.preventDefault()
-                    lastElement.focus()
-                }
-            } else {
-                if (document.activeElement === lastElement) {
-                    event.preventDefault()
-                    firstElement.focus()
-                }
-            }
-        }
-
-        document.addEventListener('keydown', handleKeyDown)
-
-        return () => {
-            document.removeEventListener('keydown', handleKeyDown)
-        }
-    }, [showConfirmModal, isSubmitting])
+        textInputRef.current?.focus()
+    }, [])
 
     function handleSubmit(event) {
         event.preventDefault()
@@ -177,7 +122,6 @@ function RegistrationPage({ onNavigateMenu, onRegistrationComplete }) {
 
                     <div className="registration-page__actions">
                         <button
-                            ref={beginButtonRef}
                             type="submit"
                             className="registration-page__submit"
                             disabled={isSubmitting}
@@ -188,52 +132,20 @@ function RegistrationPage({ onNavigateMenu, onRegistrationComplete }) {
                 </form>
             </main>
 
-            {showConfirmModal && (
-                <div
-                    className="registration-page__modal-backdrop"
-                    onClick={handleCancelConfirmation}
-                >
-                    <div
-                        ref={modalRef}
-                        className="registration-page__modal"
-                        role="alertdialog"
-                        aria-modal="true"
-                        aria-labelledby="registration-confirm-title"
-                        aria-describedby="registration-confirm-text"
-                        tabIndex={-1}
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <h3 id="registration-confirm-title" className="registration-page__modal-title">
-                            Create New Session
-                        </h3>
-
-                        <p id="registration-confirm-text" className="registration-page__modal-text">
-                            Start a new administration for <strong>{trimmedLabel}</strong>?
-                        </p>
-
-                        <div className="registration-page__modal-actions">
-                            <button
-                                ref={cancelButtonRef}
-                                type="button"
-                                className="registration-page__modal-button registration-page__modal-button--secondary"
-                                onClick={handleCancelConfirmation}
-                                disabled={isSubmitting}
-                            >
-                                Cancel
-                            </button>
-
-                            <button
-                                type="button"
-                                className="registration-page__modal-button registration-page__modal-button--primary"
-                                onClick={handleConfirmCreateSession}
-                                disabled={isSubmitting}
-                            >
-                                {isSubmitting ? 'Creating...' : 'Confirm'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmationDialog
+                open={showConfirmModal}
+                title="Create New Session"
+                message={`Start a new administration for ${trimmedLabel}?`}
+                confirmText={isSubmitting ? 'Creating...' : 'Confirm'}
+                cancelText="Cancel"
+                onConfirm={handleConfirmCreateSession}
+                onCancel={handleCancelConfirmation}
+                isBusy={isSubmitting}
+                variant="default"
+                role="alertdialog"
+                closeOnBackdrop={true}
+                initialFocus="cancel"
+            />
         </div>
     )
 }
